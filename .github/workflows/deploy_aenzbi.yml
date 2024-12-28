@@ -1,0 +1,116 @@
+name: Aenzbi CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  DATABASE_URL: postgres://default:j3Iwhlsaqr6T@ep-steep-hall-a4jlheao-pooler.us-east-1.aws.neon.tech:5432/verceldb?sslmode=require
+  SECRET_KEY: ${{ secrets.SECRET_KEY }}
+  FLUTTER_CHANNEL: stable
+  FLUTTER_VERSION: 3.10.6
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python and Node.js
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
+
+  backend:
+    runs-on: ubuntu-latest
+    needs: setup
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: default
+          POSTGRES_PASSWORD: j3Iwhlsaqr6T
+          POSTGRES_DB: verceldb
+        ports:
+          - 5432:5432
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Install Backend Dependencies
+        run: |
+          cd backend
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Apply Database Migrations
+        run: |
+          cd backend
+          source venv/bin/activate
+          python manage.py makemigrations
+          python manage.py migrate
+
+      - name: Run Backend Tests
+        run: |
+          cd backend
+          source venv/bin/activate
+          python manage.py test
+
+  frontend:
+    runs-on: ubuntu-latest
+    needs: backend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Install Flutter Dependencies
+        run: |
+          cd frontend
+          flutter pub get
+
+      - name: Run Flutter Tests
+        run: |
+          cd frontend
+          flutter test
+
+      - name: Build Flutter Web App
+        run: |
+          cd frontend
+          flutter build web
+
+      - name: Deploy to Firebase
+        run: |
+          cd frontend
+          firebase deploy --only hosting --token ${{ secrets.FIREBASE_DEPLOY_TOKEN }}
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: frontend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Build Docker Images
+        run: docker-compose build
+
+      - name: Push Docker Images to Registry
+        run: |
+          echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+          docker-compose push
