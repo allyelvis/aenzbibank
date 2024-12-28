@@ -1,0 +1,12 @@
+services:
+  backend:
+    image: username/aenzbi-backend:latest
+    build: ./backend
+    ports:
+      - "8000:8000"
+  
+  frontend:
+    image: username/aenzbi-frontend:latest
+    build: ./frontend
+    ports:
+      - "8080:80"
